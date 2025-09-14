@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"greenlight.erikberman.net/internal/data"
+	"greenlight.erikberman.net/internal/validator" // New import
+
 )
 
 
@@ -15,7 +17,7 @@ func (app *application) createMovieHandler(w http.ResponseWriter, r *http.Reques
 		// to		<----			from
 		Title		string		`json:"title"`
 		Year		int			`json:"year"`
-		Runtime		int			`json:"runtime"`
+		Runtime		data.Runtime`json:"runtime"`
 		Genres		[]string	`json:"genres"`
 	}
 
@@ -25,6 +27,28 @@ func (app *application) createMovieHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	v := validator.New()
+
+	v.Check(input.Title != "", 						"title", 	"must be provided")
+	v.Check(len(input.Title) <= 500, 				"title", 	"must not be more than 500 bytes long")
+
+	v.Check(input.Year != 0, 						"year",		"must be provided")
+	v.Check(input.Year >= 1888,						"year",		"must be greated than 1888")
+	v.Check(input.Year <= int(time.Now().Year()), 	"year", 	"must not be in the future")
+
+	v.Check(input.Runtime != 0,						"runtime",	"must be provided")
+	v.Check(input.Runtime > 0,						"runtime", 	"must be a positive integer")
+
+	v.Check(input.Genres != nil,					"genres",	"must be provided")
+	v.Check(len(input.Genres) >= 1,					"genres",	"must contain at least 1 genre")
+	v.Check(len(input.Genres) <= 5,					"genres", 	"must not contain more than 5 genres")
+	v.Check(validator.Unique(input.Genres),			"genres", 	"must not contain duplicate values")
+	
+	if ! v.Valid() {
+		app.failValidationResponse(w, r, v.Errors)
+		return
+	}
+	
 	fmt.Fprintf(w, "%+v\n", input)
 }
 
