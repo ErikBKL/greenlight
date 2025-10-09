@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"expvar"
 	"flag"
 	"log/slog"
 	"os"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,27 +21,31 @@ import (
 const version = "1.0.0"
 
 type config struct {
-	port 	int
-	env 	string
-	db 		struct{
-		dsn 			string
-		maxOpenConns	int
-		maxIdleConns	int
-		maxIdleTime		time.Duration
+	port int
+	env  string
+	db   struct {
+		dsn          string
+		maxOpenConns int
+		maxIdleConns int
+		maxIdleTime  time.Duration
 	}
 
-	limiter	struct {
-		rps		float64
-		burst	int
-		enabled	bool
+	limiter struct {
+		rps     float64
+		burst   int
+		enabled bool
 	}
 
 	smtp struct {
 		host     string
-        port     int
-        username string
-        password string
-        sender   string
+		port     int
+		username string
+		password string
+		sender   string
+	}
+
+	cors struct {
+		trustedOrigins []string
 	}
 }
 
@@ -47,22 +54,20 @@ type application struct {
 	logger *slog.Logger
 	models data.Models
 	mailer *mailer.Mailer
-	wg 		sync.WaitGroup
-
+	wg     sync.WaitGroup
 }
 
-
-func main () {
+func main() {
 
 	var cfg config
 
 	flag.IntVar(&cfg.port, "port", 4000, "API server port")
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
 
-    flag.StringVar(&cfg.db.dsn, "db-dsn", os.Getenv("GREENLIGHT_DB_DSN"), "PostgreSQL DSN")
+	flag.StringVar(&cfg.db.dsn, "db-dsn", os.Getenv("GREENLIGHT_DB_DSN"), "PostgreSQL DSN")
 	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
 	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns", 25, "PostgreSQL max idle connections")
-    flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max connection idle time")
+	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max connection idle time")
 
 	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
 	flag.IntVar(&cfg.limiter.burst, "limiter-burst", 4, "Rate limiter maximum burst")
@@ -74,12 +79,16 @@ func main () {
 	flag.StringVar(&cfg.smtp.password, "smtp-password", "7814816b0c9f91", "SMTP password")
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "Greenlight <no-reply@greenlight.erikberman.net>", "SMTP sender")
 
+	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(val string) error {
+		cfg.cors.trustedOrigins = strings.Fields(val)
+		return nil
+	})
 
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	db,err := openDB(cfg)
+	db, err := openDB(cfg)
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(1)
@@ -94,14 +103,29 @@ func main () {
 		os.Exit(1)
 	}
 
+	expvar.NewString("version").Set(version) //DEBUG ONLY
+
+	fn := func() any {
+		return runtime.NumGoroutine()
+	}
+	expvar.Publish("goroutines", expvar.Func(fn))
+
+	fn = func() any {
+		return db.Stats()
+	}
+	expvar.Publish("database", expvar.Func(fn))
+
+	fn = func() any {
+		return time.Now().Unix()
+	}
+	expvar.Publish("timestamp", expvar.Func(fn))
+
 	app := &application{
 		config: cfg,
 		logger: logger,
 		models: data.NewModels(db),
 		mailer: mailer,
 	}
-
-
 
 	err = app.serve()
 	if err != nil {
@@ -110,9 +134,8 @@ func main () {
 	}
 }
 
-
-func openDB(cfg config)(*sql.DB, error) {
-	db,err := sql.Open("postgres", cfg.db.dsn)
+func openDB(cfg config) (*sql.DB, error) {
+	db, err := sql.Open("postgres", cfg.db.dsn)
 	if err != nil {
 		return nil, err
 	}

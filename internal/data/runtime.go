@@ -8,9 +8,10 @@ import (
 )
 
 type Runtime int
+
 var ErrInvalidRuntimeFormat = errors.New("invalid runtime format")
 
-func (r Runtime)MarshalJSON() ([]byte, error) {
+func (r Runtime) MarshalJSON() ([]byte, error) {
 	jsonValue := fmt.Sprintf("%d mins", r)
 
 	quotedJSONValue := strconv.Quote(jsonValue)
@@ -18,8 +19,7 @@ func (r Runtime)MarshalJSON() ([]byte, error) {
 	return []byte(quotedJSONValue), nil
 }
 
-
-func (r *Runtime)UnmarshalJSON(jsonValue []byte) error {
+func (r *Runtime) UnmarshalJSON(jsonValue []byte) error {
 
 	unquotedJSONValue, err := strconv.Unquote(string(jsonValue))
 	if err != nil {

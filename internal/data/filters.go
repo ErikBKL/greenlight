@@ -7,20 +7,19 @@ import (
 	"greenlight.erikberman.net/internal/validator"
 )
 
-
 type Filters struct {
-	Page			int
-	PageSize		int
-	Sort			string
-	SortSafelist	[]string
+	Page         int
+	PageSize     int
+	Sort         string
+	SortSafelist []string
 }
 
 type Metadata struct {
 	CurrentPage  int `json:"current_page,omitzero"`
-    PageSize     int `json:"page_size,omitzero"`
-    FirstPage    int `json:"first_page,omitzero"`
-    LastPage     int `json:"last_page,omitzero"`
-    TotalRecords int `json:"total_records,omitzero"`
+	PageSize     int `json:"page_size,omitzero"`
+	FirstPage    int `json:"first_page,omitzero"`
+	LastPage     int `json:"last_page,omitzero"`
+	TotalRecords int `json:"total_records,omitzero"`
 }
 
 func ValidateFilters(v *validator.Validator, f Filters) {
@@ -32,7 +31,6 @@ func ValidateFilters(v *validator.Validator, f Filters) {
 	v.Check(validator.PermittedValue(f.Sort, f.SortSafelist...), "sort", "invalid sort value")
 }
 
-
 func (f Filters) sortColumn() string {
 	if slices.Contains(f.SortSafelist, f.Sort) {
 		return strings.TrimPrefix(f.Sort, "-")
@@ -40,7 +38,6 @@ func (f Filters) sortColumn() string {
 
 	panic("unsafe sort parameter: " + f.Sort)
 }
-
 
 func (f Filters) sortDirection() string {
 	if strings.HasPrefix(f.Sort, "-") {
@@ -50,13 +47,12 @@ func (f Filters) sortDirection() string {
 	return "ASC"
 }
 
-
 func (f Filters) limit() int {
 	return f.PageSize
 }
 
 func (f Filters) offset() int {
-	return (f.Page -1) * f.PageSize
+	return (f.Page - 1) * f.PageSize
 }
 
 func calculateMetadata(totalRecords, page, pageSize int) Metadata {
@@ -65,10 +61,10 @@ func calculateMetadata(totalRecords, page, pageSize int) Metadata {
 	}
 
 	return Metadata{
-		CurrentPage: page,
-		PageSize: pageSize,
-		FirstPage: 1,
-		LastPage: (totalRecords + pageSize - 1)/pageSize,
+		CurrentPage:  page,
+		PageSize:     pageSize,
+		FirstPage:    1,
+		LastPage:     (totalRecords + pageSize - 1) / pageSize,
 		TotalRecords: totalRecords,
 	}
 

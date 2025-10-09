@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
+	"expvar"
 	"fmt"
 
 	// "net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,44 +19,49 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type metricsResponseWriter struct {
+	wrapped       http.ResponseWriter
+	statusCode    int
+	headerWritten bool
+}
+
 func (app *application) recoverPanic(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-		defer func () {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
 			pv := recover()
 			if pv != nil {
 				w.Header().Set("Connection", "close")
-				app.serverErrorResponse(w,r, fmt.Errorf("%v", pv))
+				app.serverErrorResponse(w, r, fmt.Errorf("%v", pv))
 			}
 		}()
-		
-		next.ServeHTTP(w,r)
+
+		next.ServeHTTP(w, r)
 	})
 }
 
-
-func (app *application) rateLimit(next http.Handler) http.Handler { 
+func (app *application) rateLimit(next http.Handler) http.Handler {
 	if !app.config.limiter.enabled {
 		return next
 	}
-	
+
 	type client struct {
-		limiter 	*rate.Limiter
-		lastSeen	time.Time
+		limiter  *rate.Limiter
+		lastSeen time.Time
 	}
-	
+
 	var (
-		mtx		sync.Mutex
+		mtx     sync.Mutex
 		clients = make(map[string]*client)
 	)
 
-	go func () {
+	go func() {
 		for {
 			time.Sleep(time.Minute)
 
 			mtx.Lock()
 
 			for ip, client := range clients {
-				if time.Since(client.lastSeen) > 3 * time.Minute {
+				if time.Since(client.lastSeen) > 3*time.Minute {
 					delete(clients, ip)
 				}
 			}
@@ -62,7 +69,6 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 			mtx.Unlock()
 		}
 	}()
-
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := realip.FromRequest(r)
@@ -75,7 +81,7 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 
 		if !clients[ip].limiter.Allow() {
 			mtx.Unlock()
-			app.rateLimitExceededResponse(w,r)
+			app.rateLimitExceededResponse(w, r)
 			return
 		}
 
@@ -85,9 +91,8 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 	})
 }
 
-
 func (app *application) authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r * http.Request){
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Authorization")
 
 		authorizationHeader := r.Header.Get("Authorization")
@@ -127,5 +132,138 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		r = app.contextSetUser(r, user)
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) requireActivatedUser(next http.HandlerFunc) http.HandlerFunc {
+	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+		if !user.Activated {
+			app.inactiveAccountResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+
+	return app.requireAuthenticatedUser(fn)
+}
+
+func (app *application) requireAuthenticatedUser(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		if user.IsAnonymous() {
+			app.authenticationRequiredResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) requirePermission(requiredCode string, next http.HandlerFunc) http.HandlerFunc {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		permissions, err := app.models.Permissions.GetAllForUser(user.ID)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		if !permissions.Include(requiredCode) {
+			app.notPermittedResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+
+	return app.requireActivatedUser(fn)
+}
+
+func (app *application) enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin")
+		w.Header().Add("Vary", "Access-Control-Request-Method")
+
+		origin := r.Header.Get("Origin")
+
+		if origin != "" {
+			for _, trusted := range app.config.cors.trustedOrigins {
+				if origin == trusted {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+
+					if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+						w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, PUT, PATCH, DELETE")
+						w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+
+					break
+				}
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func newMetricsResponseWriter(w http.ResponseWriter) *metricsResponseWriter {
+	return &metricsResponseWriter{
+		wrapped:    w,
+		statusCode: http.StatusOK,
+	}
+}
+
+func (mw *metricsResponseWriter) Header() http.Header {
+	return mw.wrapped.Header()
+}
+
+func (mw *metricsResponseWriter) WriteHeader(statusCode int) {
+	mw.wrapped.WriteHeader(statusCode)
+
+	if !mw.headerWritten {
+		mw.statusCode = statusCode
+		mw.headerWritten = true
+	}
+}
+
+func (mw *metricsResponseWriter) Write(b []byte) (int, error) {
+	mw.headerWritten = true
+	return mw.wrapped.Write(b)
+}
+
+func (mw *metricsResponseWriter) Unwrap() http.ResponseWriter {
+	return mw.wrapped
+}
+
+func (app *application) metrics(next http.Handler) http.Handler {
+	var (
+		totalRequestsReceived           = expvar.NewInt("total_requests_received")
+		totalResponsesSent              = expvar.NewInt("total_responses_sent")
+		totalProcessingTimeMicroseconds = expvar.NewInt("total_processing_time_us")
+
+		totalResponsesSentByStatus = expvar.NewMap("total_responses_sent_by_status")
+	)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		totalRequestsReceived.Add(1)
+
+		mw := newMetricsResponseWriter(w)
+
+		next.ServeHTTP(w, r)
+
+		totalResponsesSent.Add(1)
+
+		totalResponsesSentByStatus.Add(strconv.Itoa(mw.statusCode), 1) // map is m[string]int
+
+		duration := time.Since(start).Microseconds()
+
+		totalProcessingTimeMicroseconds.Add(duration)
 	})
 }

@@ -13,13 +13,13 @@ import (
 )
 
 type Movie struct {
-	ID				int64		`json:"id"`
-	CreatedAt		time.Time	`json:"-"`
-	Title			string		`json: "title"`
-	Year			int		`json: "year,omitzero"`
-	Runtime			Runtime		`json:"runtime,omitzero"`
-	Genres			[]string	`json: "genres,omitzero"`
-	Version			int		`json: "version"`
+	ID        int64     `json:"id"`
+	CreatedAt time.Time `json:"-"`
+	Title     string    `json: "title"`
+	Year      int       `json: "year,omitzero"`
+	Runtime   Runtime   `json:"runtime,omitzero"`
+	Genres    []string  `json: "genres,omitzero"`
+	Version   int       `json: "version"`
 }
 
 type MovieModel struct {
@@ -37,11 +37,10 @@ func (m MovieModel) Insert(movie *Movie) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-
 	return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
 }
 
-func (m MovieModel) Get(id int)(*Movie, error) {
+func (m MovieModel) Get(id int) (*Movie, error) {
 	if id < 1 {
 		return nil, ErrRecordNotFound
 	}
@@ -74,17 +73,16 @@ func (m MovieModel) Get(id int)(*Movie, error) {
 			return nil, err
 		}
 	}
-// TODO why return pointer to movie?
+	// TODO why return pointer to movie?
 	return &movie, nil
 }
 
-func (m MovieModel) Update (movie *Movie) error {
+func (m MovieModel) Update(movie *Movie) error {
 	query := `
 	UPDATE movies
 	SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
 	WHERE id = $5 AND version = $6
 	RETURNING version`
-
 
 	args := []any{
 		movie.Title,
@@ -100,7 +98,7 @@ func (m MovieModel) Update (movie *Movie) error {
 
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.Version)
 	if err != nil {
-		switch{
+		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			return ErrEditConflict
 		default:
@@ -110,8 +108,6 @@ func (m MovieModel) Update (movie *Movie) error {
 
 	return nil
 }
-
-
 
 func (m MovieModel) Delete(id int) error {
 	if id < 1 {
@@ -142,27 +138,24 @@ func (m MovieModel) Delete(id int) error {
 	return nil
 }
 
-
-
 func ValidateMovie(v *validator.Validator, movie *Movie) {
 	v.Check(movie.Title != "", "title", "must be provided")
-    v.Check(len(movie.Title) <= 500, "title", "must not be more than 500 bytes long")
+	v.Check(len(movie.Title) <= 500, "title", "must not be more than 500 bytes long")
 
-    v.Check(movie.Year != 0, "year", "must be provided")
-    v.Check(movie.Year >= 1888, "year", "must be greater than 1888")
-    v.Check(movie.Year <= int(time.Now().Year()), "year", "must not be in the future")
+	v.Check(movie.Year != 0, "year", "must be provided")
+	v.Check(movie.Year >= 1888, "year", "must be greater than 1888")
+	v.Check(movie.Year <= int(time.Now().Year()), "year", "must not be in the future")
 
-    v.Check(movie.Runtime != 0, "runtime", "must be provided")
-    v.Check(movie.Runtime > 0, "runtime", "must be a positive integer")
+	v.Check(movie.Runtime != 0, "runtime", "must be provided")
+	v.Check(movie.Runtime > 0, "runtime", "must be a positive integer")
 
-    v.Check(movie.Genres != nil, "genres", "must be provided")
-    v.Check(len(movie.Genres) >= 1, "genres", "must contain at least 1 genre")
-    v.Check(len(movie.Genres) <= 5, "genres", "must not contain more than 5 genres")
-    v.Check(validator.Unique(movie.Genres), "genres", "must not contain duplicate values")
+	v.Check(movie.Genres != nil, "genres", "must be provided")
+	v.Check(len(movie.Genres) >= 1, "genres", "must contain at least 1 genre")
+	v.Check(len(movie.Genres) <= 5, "genres", "must not contain more than 5 genres")
+	v.Check(validator.Unique(movie.Genres), "genres", "must not contain duplicate values")
 }
 
-
-func (m MovieModel) GetAll(title string, genres []string, filters Filters)([]*Movie, Metadata, error) {
+func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, Metadata, error) {
 	query := fmt.Sprintf(`
 	SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
 	FROM movies
@@ -206,12 +199,11 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters)([]*Mo
 		movies = append(movies, &movie)
 	}
 
-	if err = rows.Err() ; err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, Metadata{}, err
 	}
 
 	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
-
 
 	return movies, metadata, nil
 }

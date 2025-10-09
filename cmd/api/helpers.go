@@ -2,20 +2,19 @@ package main
 
 import (
 	"encoding/json"
-    "errors"
+	"errors"
 	"fmt"
 	"io"
-    "net/http"
+	"net/http"
 	"net/url"
-    "strconv"
+	"strconv"
 	"strings"
 
+	"github.com/julienschmidt/httprouter"
 	"greenlight.erikberman.net/internal/validator"
-    "github.com/julienschmidt/httprouter"
 )
 
 type envelope map[string]any
-
 
 func (app *application) writeJSON(w http.ResponseWriter, status int, data envelope, headers http.Header) error {
 	js, err := json.MarshalIndent(data, "", "\t")
@@ -39,8 +38,7 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 	return nil
 }
 
-
-func (app * application) readIDParam (r *http.Request) (int, error) {
+func (app *application) readIDParam(r *http.Request) (int, error) {
 	params := httprouter.ParamsFromContext(r.Context())
 
 	id, err := strconv.ParseInt(params.ByName("id"), 10, 64)
@@ -52,19 +50,18 @@ func (app * application) readIDParam (r *http.Request) (int, error) {
 
 }
 
-
-func (app *application)readJSON(w http.ResponseWriter, r * http.Request, dst any) error {
+func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 1_048_576)
-	
+
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 
 	err := dec.Decode(dst)
 	if err != nil {
-		var syntaxError 			*json.SyntaxError
-		var unmarshalTypeError 		*json.UnmarshalTypeError
-		var invalidUnmarshalError 	*json.InvalidUnmarshalError
-		var maxBytesError			*http.MaxBytesError
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+		var invalidUnmarshalError *json.InvalidUnmarshalError
+		var maxBytesError *http.MaxBytesError
 
 		switch {
 		case errors.As(err, &syntaxError):
@@ -72,7 +69,7 @@ func (app *application)readJSON(w http.ResponseWriter, r * http.Request, dst any
 		case errors.Is(err, io.ErrUnexpectedEOF):
 			return errors.New("body contains badly-formed JSON")
 		case errors.As(err, &unmarshalTypeError):
-			if unmarshalTypeError.Field != ""{
+			if unmarshalTypeError.Field != "" {
 				return fmt.Errorf("body contains incorrect JSON type for field %q", unmarshalTypeError.Field)
 			}
 			return fmt.Errorf("body contains incorrect JSON type (at character %d)", unmarshalTypeError.Offset)
@@ -90,15 +87,14 @@ func (app *application)readJSON(w http.ResponseWriter, r * http.Request, dst any
 		}
 
 	}
-	
+
 	err = dec.Decode(&struct{}{})
-	if ! errors.Is(err, io.EOF) {
+	if !errors.Is(err, io.EOF) {
 		return errors.New("body must only contain a single JSON value")
 	}
-	
+
 	return nil
 }
-
 
 func (app *application) readString(qs url.Values, key string, defaultValue string) string {
 	s := qs.Get(key)
@@ -110,7 +106,6 @@ func (app *application) readString(qs url.Values, key string, defaultValue strin
 	return s
 }
 
-
 func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
 	csv := qs.Get(key)
 
@@ -120,7 +115,6 @@ func (app *application) readCSV(qs url.Values, key string, defaultValue []string
 
 	return strings.Split(csv, ",")
 }
-
 
 func (app *application) readInt(qs url.Values, key string, defaultValue int, v *validator.Validator) int {
 	s := qs.Get(key)
@@ -140,7 +134,7 @@ func (app *application) readInt(qs url.Values, key string, defaultValue int, v *
 }
 
 func (app *application) background(fn func()) {
-	app.wg.Go( func() {
+	app.wg.Go(func() {
 		defer func() {
 			pv := recover()
 			if pv != nil {

@@ -7,19 +7,18 @@ import (
 
 	"github.com/wneessen/go-mail"
 	ht "html/template"
-    tt "text/template"
+	tt "text/template"
 )
-
 
 //go:embed "templates"
 var templateFS embed.FS
 
 type Mailer struct {
-	client 	*mail.Client
-	sender 	string
+	client *mail.Client
+	sender string
 }
 
-func New(host string, port int, username, password, sender string)(*Mailer, error) {
+func New(host string, port int, username, password, sender string) (*Mailer, error) {
 	client, err := mail.NewClient(
 		host,
 		mail.WithSMTPAuth(mail.SMTPAuthLogin),
@@ -41,7 +40,6 @@ func New(host string, port int, username, password, sender string)(*Mailer, erro
 	return mailer, nil
 }
 
-
 func (m *Mailer) Send(recipient string, templateFile string, data any) error {
 	textTmpl, err := tt.New("").ParseFS(templateFS, "templates/"+templateFile)
 	if err != nil {
@@ -57,9 +55,9 @@ func (m *Mailer) Send(recipient string, templateFile string, data any) error {
 	plainBody := new(bytes.Buffer)
 	err = textTmpl.ExecuteTemplate(plainBody, "plainBody", data)
 	if err != nil {
-        return err
-    }
-	
+		return err
+	}
+
 	htmlTmpl, err := ht.New("").ParseFS(templateFS, "templates/"+templateFile)
 	if err != nil {
 		return err

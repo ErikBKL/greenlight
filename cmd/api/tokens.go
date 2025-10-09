@@ -1,18 +1,18 @@
 package main
 
-import(
+import (
 	"errors"
 	"net/http"
 	"time"
 
 	"greenlight.erikberman.net/internal/data"
-    "greenlight.erikberman.net/internal/validator"
+	"greenlight.erikberman.net/internal/validator"
 )
 
 func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email		string	`json:"email"`
-		Password	string	`json:"password"`	
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	err := app.readJSON(w, r, &input)
@@ -33,7 +33,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 
 	user, err := app.models.Users.GetByEmail(input.Email)
 	if err != nil {
-		switch{
+		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
 			app.invalidCredentialsResponse(w, r)
 
@@ -42,7 +42,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 		}
 		return
 	}
-	
+
 	match, err := user.Password.Matches(input.Password)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
