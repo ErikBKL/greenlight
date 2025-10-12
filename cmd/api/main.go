@@ -15,12 +15,15 @@ import (
 
 	"greenlight.erikberman.net/internal/data"
 	"greenlight.erikberman.net/internal/mailer" // New import
+	"greenlight.erikberman.net/internal/vcs" // New import
+
 
 	_ "github.com/lib/pq"
 )
 
-const version = "1.0.0"
-
+var (
+    version = vcs.Version()
+)
 type config struct {
 	port int
 	env  string
