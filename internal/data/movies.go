@@ -15,11 +15,11 @@ import (
 type Movie struct {
 	ID        int64     `json:"id"`
 	CreatedAt time.Time `json:"-"`
-	Title     string    `json: "title"`
-	Year      int       `json: "year,omitzero"`
+	Title     string    `json:"title"`
+	Year      int       `json:"year,omitzero"`
 	Runtime   Runtime   `json:"runtime,omitzero"`
-	Genres    []string  `json: "genres,omitzero"`
-	Version   int       `json: "version"`
+	Genres    []string  `json:"genres,omitzero"`
+	Version   int       `json:"version"`
 }
 
 type MovieModel struct {
